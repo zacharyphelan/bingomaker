@@ -288,11 +288,13 @@
       .board {
         max-width: 100%;
         border-radius: 0;
-        gap: 1px;
+        gap: 0;
+        background: #fff;
+        border: 2px solid #000;
       }
 
       .cell {
-        font-size: 10pt;
+        border: 1px solid #000;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
@@ -462,6 +464,35 @@
         return cells;
       }
 
+      // --- Auto-fit text to cell ---
+      function fitTextToCell(cell) {
+        // Skip free-space cells (they have child elements, not direct text)
+        if (cell.classList.contains('free-space')) return;
+        var text = cell.textContent;
+        if (!text) return;
+
+        // Reset font size to measure
+        cell.style.fontSize = '';
+        var maxSize = 48;
+        var minSize = 6;
+        var size = maxSize;
+
+        // Use a binary search to find the largest font size that fits
+        var lo = minSize;
+        var hi = maxSize;
+        while (lo <= hi) {
+          var mid = Math.floor((lo + hi) / 2);
+          cell.style.fontSize = mid + 'px';
+          if (cell.scrollWidth <= cell.clientWidth && cell.scrollHeight <= cell.clientHeight) {
+            size = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        cell.style.fontSize = size + 'px';
+      }
+
       // --- DOM preview ---
       function renderBoardPreview(cells, dim) {
         boardContainer.innerHTML = '';
@@ -500,6 +531,13 @@
         }
 
         boardContainer.appendChild(board);
+
+        // Auto-fit text in each cell to maximum size
+        var allCells = board.querySelectorAll('.cell');
+        for (var j = 0; j < allCells.length; j++) {
+          fitTextToCell(allCells[j]);
+        }
+
         regenerateBtn.style.display = '';
         printBtn.style.display = '';
         saveConfig();
@@ -579,23 +617,37 @@
             }
             doc.setTextColor(0, 0, 0);
           } else {
-            // Determine font size based on text length and cell size
+            // Determine maximum font size that fits in the cell
             var text = c.text;
-            var maxFontSize = dim <= 5 ? 10 : dim <= 7 ? 8 : 6;
-            var fontSize = maxFontSize;
+            var padding = 2;
+            var maxWidth = cellSize - padding * 2;
+            var maxHeight = cellSize - padding * 2;
             doc.setFont('helvetica', 'normal');
 
-            // Wrap text into lines that fit
-            var maxWidth = cellSize - 4;
-            doc.setFontSize(fontSize);
-            var lines = doc.splitTextToSize(text, maxWidth);
+            // Binary search for the largest font size that fits
+            var lo = 4;
+            var hi = Math.floor(cellSize * 0.9);
+            var bestSize = lo;
+            var bestLines = [text];
 
-            // Reduce font if too many lines
-            while (lines.length * (fontSize * 0.4) > cellSize - 4 && fontSize > 4) {
-              fontSize--;
-              doc.setFontSize(fontSize);
-              lines = doc.splitTextToSize(text, maxWidth);
+            while (lo <= hi) {
+              var mid = Math.floor((lo + hi) / 2);
+              doc.setFontSize(mid);
+              var testLines = doc.splitTextToSize(text, maxWidth);
+              var lineH = mid * 0.4;
+              var totalH = testLines.length * lineH;
+              if (totalH <= maxHeight) {
+                bestSize = mid;
+                bestLines = testLines;
+                lo = mid + 1;
+              } else {
+                hi = mid - 1;
+              }
             }
+
+            var fontSize = bestSize;
+            doc.setFontSize(fontSize);
+            var lines = bestLines;
 
             var lineHeight = fontSize * 0.4;
             var totalTextH = lines.length * lineHeight;
